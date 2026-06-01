@@ -163,8 +163,7 @@ jobs:
           echo "  SCA findings (pip-audit)"
           echo "════════════════════════════════════"
           jq -r '
-            .[] |
-            select(.vulns | length > 0) |
+            .dependencies[] | select(.vulns | length > 0) |
             "Package: \(.name) \(.version)",
             (.vulns[] | "  [\(.id)] \(.description // "no description")")
           ' reports/sca-pip-audit.json || echo "(no JSON report found)"

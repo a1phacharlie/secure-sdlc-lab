@@ -72,7 +72,7 @@ jobs:
         with:
           target: "http://localhost:5000"
           rules_file_name: ".zap/rules.tsv"
-          cmd_options: "-J reports/dast-zap.json -w reports/dast-zap.md"
+          cmd_options: ""
           fail_action: false
 
       - name: Upload DAST reports
