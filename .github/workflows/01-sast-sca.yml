@@ -1,0 +1,170 @@
+name: "P1 — SAST + SCA"
+
+# ── When this runs ────────────────────────────────────────────────────────────
+# Every push to main or any pull request targeting main.
+# You can also trigger it manually from the Actions tab.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # SAST — Static Application Security Testing
+  # Tool:   Bandit
+  # What:   Reads your Python source code WITHOUT running it.
+  #         Matches AST patterns against ~100 built-in security test plugins.
+  # When:   Runs on every push. No app, no Docker, no network needed.
+  # Output: reports/sast-bandit.json  (machine-readable)
+  #         reports/sast-bandit.txt   (human-readable)
+  # ════════════════════════════════════════════════════════════════════════════
+  sast:
+    name: "SAST — Bandit"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        # NOTE (Pillar 2): in the next commit we will pin this to a SHA hash
+        # to prevent supply-chain attacks on the action itself.
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Bandit
+        run: pip install bandit
+
+      # Run Bandit and produce two output formats:
+      #   -r app/         = scan the app/ directory recursively
+      #   -l              = include LOW severity findings (default is MEDIUM+)
+      #                     use -ll for MEDIUM+, -lll for HIGH only
+      #   --exit-zero     = don't fail the build yet
+      #                     NOTE (Pillar 2): we remove this flag when hardening
+      - name: Run Bandit (SAST scan)
+        run: |
+          mkdir -p reports
+
+          # JSON report — used by dashboards / other tools
+          bandit -r app/ -l -f json -o reports/sast-bandit.json --exit-zero
+
+          # Text report — human-readable summary
+          bandit -r app/ -l -f txt  -o reports/sast-bandit.txt  --exit-zero
+
+          # Also print a summary directly to the Actions log
+          echo "════════ SAST Summary ════════"
+          bandit -r app/ -l --exit-zero
+
+      # Upload the reports so you can download them from the Actions UI
+      - name: Upload SAST reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: sast-report
+          path: reports/sast-bandit.*
+          # Keep reports for 30 days
+          retention-days: 30
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # SCA — Software Composition Analysis
+  # Tool:   pip-audit
+  # What:   Reads requirements.txt and queries the PyPA Advisory Database
+  #         (OSV format) for known CVEs in every listed dependency.
+  #         It checks YOUR LIBRARIES, not your code — that's the difference
+  #         from SAST. You could write perfect code and still ship CVEs via deps.
+  # When:   Runs on every push alongside SAST.
+  # Output: reports/sca-pip-audit.json
+  # ════════════════════════════════════════════════════════════════════════════
+  sca:
+    name: "SCA — pip-audit"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      # Scan the intentionally vulnerable requirements.txt
+      #   -r app/requirements.txt = target file
+      #   --desc                  = include CVE description in output
+      #   -f json                 = machine-readable output
+      #   || true                 = don't fail the build yet (Pillar 2 removes this)
+      - name: Run pip-audit (SCA scan)
+        run: |
+          mkdir -p reports
+
+          # JSON report
+          pip-audit \
+            -r app/requirements.txt \
+            --desc \
+            -f json \
+            -o reports/sca-pip-audit.json \
+            || true
+
+          # Human-readable to Actions log
+          echo "════════ SCA Summary ════════"
+          pip-audit -r app/requirements.txt --desc || true
+
+      - name: Upload SCA report
+        uses: actions/upload-artifact@v4
+        with:
+          name: sca-report
+          path: reports/sca-pip-audit.json
+          retention-days: 30
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Learning checkpoint — print a summary of what both tools found
+  # This step only runs after both SAST and SCA complete successfully.
+  # ════════════════════════════════════════════════════════════════════════════
+  summarise:
+    name: "Print findings summary"
+    runs-on: ubuntu-latest
+    needs: [sast, sca]
+
+    steps:
+      - name: Download SAST report
+        uses: actions/download-artifact@v4
+        with:
+          name: sast-report
+          path: reports/
+
+      - name: Download SCA report
+        uses: actions/download-artifact@v4
+        with:
+          name: sca-report
+          path: reports/
+
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Parse and print SAST findings
+        run: |
+          echo "════════════════════════════════════"
+          echo "  SAST findings (Bandit)"
+          echo "════════════════════════════════════"
+          jq -r '
+            .results[] |
+            "[\(.issue_severity)] \(.issue_text)\n  File: \(.filename):\(.line_number)\n  Rule: \(.test_id) — \(.test_name)\n"
+          ' reports/sast-bandit.json || echo "(no JSON report found)"
+
+      - name: Parse and print SCA findings
+        run: |
+          echo "════════════════════════════════════"
+          echo "  SCA findings (pip-audit)"
+          echo "════════════════════════════════════"
+          jq -r '
+            .[] |
+            select(.vulns | length > 0) |
+            "Package: \(.name) \(.version)",
+            (.vulns[] | "  [\(.id)] \(.description // "no description")")
+          ' reports/sca-pip-audit.json || echo "(no JSON report found)"

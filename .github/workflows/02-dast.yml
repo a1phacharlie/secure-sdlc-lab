@@ -1,0 +1,85 @@
+name: "P1 — DAST"
+
+# ── When this runs ────────────────────────────────────────────────────────────
+# Separate from SAST/SCA because DAST needs a running app.
+# Only on push to main (not every PR — it takes longer and needs a live server).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # DAST — Dynamic Application Security Testing
+  # Tool:   OWASP ZAP (Zed Attack Proxy) — baseline scan
+  # What:   Starts the Flask app, then ZAP crawls it like a browser would.
+  #         It fires HTTP requests with attack payloads and checks responses.
+  #         Finds things SAST CANNOT: missing security headers, reflected XSS
+  #         at runtime, open redirects, IDOR, misconfigurations.
+  #
+  # Scan types:
+  #   baseline  = passive spider + passive checks (~2 min) ← we use this
+  #   full-scan = + active attack rules (SQLi, XSS probes) (~20 min)
+  #   api-scan  = OpenAPI/Swagger-aware
+  #
+  # Output: reports/dast-zap.json
+  #         reports/dast-zap.html
+  # ════════════════════════════════════════════════════════════════════════════
+  dast:
+    name: "DAST — OWASP ZAP baseline"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Install SAFE versions of Flask to actually run the app.
+      # We scanned the VULNERABLE requirements.txt in the SAST/SCA job.
+      # This job just needs the app to boot cleanly so ZAP can talk to it.
+      - name: Install safe app dependencies
+        run: pip install -r app/requirements-safe.txt
+
+      # Start Flask in the background
+      # The & puts it in the background; sleep 3 gives it time to bind to :5000
+      - name: Start Flask app
+        run: |
+          cd app
+          python app.py &
+          sleep 3
+          # Verify it's actually responding before ZAP tries to scan it
+          curl --fail --silent http://localhost:5000/ > /dev/null \
+            && echo "✓ App is up on :5000" \
+            || (echo "✗ App failed to start" && exit 1)
+
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      # OWASP ZAP baseline scan via the official GitHub Action
+      # target:        URL ZAP will crawl and test
+      # rules_file:    .zap/rules.tsv — controls PASS/WARN/FAIL per alert type
+      # cmd_options:   extra flags passed to zap-baseline.py
+      #   -J reports/dast-zap.json  = JSON output
+      #   -w reports/dast-zap.md    = Markdown output
+      # fail_action:   false = don't fail build on findings (Pillar 2 changes this)
+      - name: Run OWASP ZAP baseline scan (DAST)
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: "http://localhost:5000"
+          rules_file_name: ".zap/rules.tsv"
+          cmd_options: "-J reports/dast-zap.json -w reports/dast-zap.md"
+          fail_action: false
+
+      - name: Upload DAST reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: dast-report
+          path: |
+            reports/dast-zap.json
+            reports/dast-zap.md
+          retention-days: 30

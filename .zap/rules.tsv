@@ -1,0 +1,50 @@
+# .zap/rules.tsv
+# Controls how ZAP treats each alert type.
+# Format: <rule_id>TAB<PASS|WARN|FAIL>TAB<description>
+#
+# PASS  = ZAP ignores this alert type
+# WARN  = ZAP reports it but doesn't fail the build
+# FAIL  = ZAP fails the build if this alert fires
+#
+# For Pillar 1 everything is WARN — we want to SEE findings without blocking.
+# In Pillar 2 (CI hardening) we promote critical alerts to FAIL.
+#
+# Full rule list: https://www.zaproxy.org/docs/alerts/
+#
+# ── Missing security headers (passive checks — no attack needed) ──────────────
+10010	WARN	Cookie no HttpOnly flag
+10011	WARN	Cookie without Secure flag
+10015	WARN	Incomplete or no cache-control header
+10016	WARN	Web browser XSS protection not enabled
+10017	WARN	Cross-domain JavaScript source file inclusion
+10019	WARN	Content-Type header missing
+10020	WARN	X-Frame-Options header missing
+10021	WARN	X-Content-Type-Options header missing
+10023	WARN	Information disclosure — debug error messages
+10024	WARN	Information disclosure — sensitive info in URL
+10027	WARN	Information disclosure — suspicious comments
+10028	WARN	Open redirect
+10036	WARN	Server leaks version info via Server header
+10037	WARN	Server leaks info via X-Powered-By header
+10038	WARN	Content Security Policy (CSP) header not set
+10054	WARN	Cookie without SameSite attribute
+10055	WARN	CSP misconfiguration
+10061	WARN	X-AspNet-Version response header
+10063	WARN	Permissions-Policy header not set
+10096	WARN	Timestamp disclosure
+10105	WARN	Weak authentication method
+10110	WARN	Dangerous JS functions
+# ── Active attack findings ────────────────────────────────────────────────────
+40012	WARN	Cross-site scripting (reflected)
+40014	WARN	Cross-site scripting (persistent)
+40018	WARN	SQL injection
+40019	WARN	SQL injection (MySQL)
+40020	WARN	SQL injection (Hypersonic SQL)
+40021	WARN	SQL injection (Oracle)
+40022	WARN	SQL injection (PostgreSQL)
+40024	WARN	SQL injection (SQLite)
+40025	WARN	Proxy disclosure
+40026	WARN	Cross-site scripting (DOM)
+40027	WARN	SQL injection (MsSQL)
+40028	WARN	CSRF
+40029	WARN	CSRF (anti-CSRF token)

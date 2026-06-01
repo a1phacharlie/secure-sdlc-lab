@@ -1,0 +1,16 @@
+# requirements-safe.txt — patched versions used to RUN the app in CI
+#
+# Why two files?
+# - requirements.txt    → intentionally vulnerable (SCA scans THIS)
+# - requirements-safe.txt → current safe versions (CI uses THIS to boot the app)
+#
+# The DAST job needs the app running, but we don't need to run the vulnerable
+# versions — we just need SCA to REPORT on them. This separation is a real
+# pattern used in security labs and CTF environments.
+
+Flask>=2.3.0
+Werkzeug>=2.3.0
+Jinja2>=3.1.2
+requests>=2.31.0
+cryptography>=41.0.0
+PyYAML>=6.0.1

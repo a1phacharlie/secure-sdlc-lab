@@ -1,0 +1,23 @@
+# requirements.txt — intentionally pinned to VULNERABLE versions
+# Purpose: give pip-audit (SCA) real CVEs to report
+#
+# DO NOT use these versions in any real project.
+#
+# What pip-audit will find:
+# ┌─────────────────┬─────────────┬──────────────────────────────────────────────────┐
+# │ Package         │ Version     │ CVE / Issue                                      │
+# ├─────────────────┼─────────────┼──────────────────────────────────────────────────┤
+# │ Flask           │ 1.0.2       │ CVE-2018-1000656 — ReDoS via malformed cookie    │
+# │ Werkzeug        │ 0.14.1      │ CVE-2019-14322  — path traversal in static files │
+# │ Jinja2          │ 2.10        │ CVE-2019-10906  — sandbox escape                 │
+# │ requests        │ 2.18.4      │ CVE-2018-18074  — credential leak on redirect    │
+# │ cryptography    │ 2.1.4       │ multiple CVEs in old OpenSSL bindings            │
+# │ PyYAML          │ 3.13        │ CVE-2017-18342  — arbitrary code via yaml.load() │
+# └─────────────────┴─────────────┴──────────────────────────────────────────────────┘
+
+Flask==1.0.2
+Werkzeug==0.14.1
+Jinja2==2.10
+requests==2.18.4
+cryptography==3.3.1
+PyYAML==3.13

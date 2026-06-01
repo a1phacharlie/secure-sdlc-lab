@@ -1,0 +1,11 @@
+# bandit.yaml — SAST configuration for secure-sdlc-lab
+# Docs: https://bandit.readthedocs.io/en/latest/config.html
+#
+# For this learning project we run ALL tests at ALL severities.
+# In a real project you would tune skips after reviewing false positives.
+
+# No skips — we want to see everything Bandit can find
+skips: []
+
+# Tests to explicitly include (empty = include all)
+tests: []
