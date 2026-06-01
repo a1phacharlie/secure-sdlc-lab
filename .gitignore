@@ -1,0 +1,26 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.egg-info/
+dist/
+build/
+
+# Security tool outputs
+reports/
+*.sarif
+
+# Secrets — never commit these
+.env.local
+.env.*.local
+secrets.yaml
+*_secret*
+*_key*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/settings.json
