@@ -74,6 +74,7 @@ jobs:
           rules_file_name: ".zap/rules.tsv"
           fail_action: false
           allow_issue_writing: false
+          artifact_name: "zap-scan-report"
 
       - name: Upload DAST reports
         uses: actions/upload-artifact@v4
