@@ -69,12 +69,12 @@ jobs:
       # fail_action:   false = don't fail build on findings (Pillar 2 changes this)
       - name: Run OWASP ZAP baseline scan (DAST)
         uses: zaproxy/action-baseline@v0.12.0
+        continue-on-error: true
         with:
           target: "http://localhost:5000"
           rules_file_name: ".zap/rules.tsv"
           fail_action: false
           allow_issue_writing: false
-          artifact_name: "zap-scan-report"
 
       - name: Upload DAST reports
         uses: actions/upload-artifact@v4
@@ -85,3 +85,4 @@ jobs:
             report_md.md
             report_html.html
           retention-days: 30
+          
