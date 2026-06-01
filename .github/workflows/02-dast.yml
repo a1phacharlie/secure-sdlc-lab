@@ -72,14 +72,15 @@ jobs:
         with:
           target: "http://localhost:5000"
           rules_file_name: ".zap/rules.tsv"
-          cmd_options: ""
           fail_action: false
+          allow_issue_writing: false
 
       - name: Upload DAST reports
         uses: actions/upload-artifact@v4
         with:
           name: dast-report
           path: |
-            reports/dast-zap.json
-            reports/dast-zap.md
+            report_json.json
+            report_md.md
+            report_html.html
           retention-days: 30
