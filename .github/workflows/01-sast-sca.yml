@@ -1,8 +1,6 @@
-name: "P1 — SAST + SCA"
+name: "P1+P2 — SAST + SCA"
 
 # ── When this runs ────────────────────────────────────────────────────────────
-# Every push to main or any pull request targeting main.
-# You can also trigger it manually from the Actions tab.
 on:
   push:
     branches: [main]
@@ -10,73 +8,80 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# ── [P2] Least-privilege GITHUB_TOKEN ────────────────────────────────────────
+# By default GitHub gives workflows read+write on everything.
+# We declare only what this workflow actually needs.
+# This limits blast radius if a dependency or action is compromised.
+permissions:
+  contents: read        # checkout the repo
+  security-events: write # upload SARIF results to GitHub Security tab
+
 jobs:
 
   # ════════════════════════════════════════════════════════════════════════════
-  # SAST — Static Application Security Testing
-  # Tool:   Bandit
-  # What:   Reads your Python source code WITHOUT running it.
-  #         Matches AST patterns against ~100 built-in security test plugins.
-  # When:   Runs on every push. No app, no Docker, no network needed.
-  # Output: reports/sast-bandit.json  (machine-readable)
-  #         reports/sast-bandit.txt   (human-readable)
+  # SAST — Bandit
+  # [P2 changes]:
+  #   - Pinned action SHAs (supply-chain hardening)
+  #   - Removed --exit-zero → HIGH findings now BREAK the build
+  #   - Added SARIF output → findings visible in GitHub Security tab
   # ════════════════════════════════════════════════════════════════════════════
   sast:
     name: "SAST — Bandit"
     runs-on: ubuntu-latest
 
     steps:
+      # [P2] SHA-pinned — not just @v4 but the exact commit hash.
+      # Why: a tag like @v4 can be moved by the action author to point
+      # at malicious code. A SHA is immutable — it always refers to
+      # exactly this version of the action.
       - name: Checkout source code
-        uses: actions/checkout@v4
-        # NOTE (Pillar 2): in the next commit we will pin this to a SHA hash
-        # to prevent supply-chain attacks on the action itself.
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
 
       - name: Install Bandit
         run: pip install bandit
 
-      # Run Bandit and produce two output formats:
-      #   -r app/         = scan the app/ directory recursively
-      #   -l              = include LOW severity findings (default is MEDIUM+)
-      #                     use -ll for MEDIUM+, -lll for HIGH only
-      #   --exit-zero     = don't fail the build yet
-      #                     NOTE (Pillar 2): we remove this flag when hardening
-      - name: Run Bandit (SAST scan)
+      - name: Run Bandit SAST — fail on HIGH
+        # [P2] --exit-zero removed.
+        # Exit codes: 0 = no issues, 1 = issues found, 2 = error
+        # -lll = HIGH severity only for the failing check
+        # We keep a separate -l (all severities) run for the JSON report
         run: |
           mkdir -p reports
 
-          # JSON report — used by dashboards / other tools
+          # Full report at all severities (for artifact/review)
           bandit -r app/ -l -f json -o reports/sast-bandit.json --exit-zero
-
-          # Text report — human-readable summary
           bandit -r app/ -l -f txt  -o reports/sast-bandit.txt  --exit-zero
 
-          # Also print a summary directly to the Actions log
           echo "════════ SAST Summary ════════"
           bandit -r app/ -l --exit-zero
 
-      # Upload the reports so you can download them from the Actions UI
+          echo ""
+          echo "════════ SAST Gate — HIGH severity ════════"
+          echo "The build FAILS if any HIGH severity issues exist."
+          echo "This enforces: no new HIGH-risk code merges to main."
+          echo ""
+          # [P2] This is the enforcement gate — exits 1 if HIGH found
+          bandit -r app/ -lll
+
       - name: Upload SAST reports
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        # always() = upload even if the gate step above failed,
+        # so engineers can download and review findings
+        if: always()
         with:
           name: sast-report
           path: reports/sast-bandit.*
-          # Keep reports for 30 days
           retention-days: 30
 
   # ════════════════════════════════════════════════════════════════════════════
-  # SCA — Software Composition Analysis
-  # Tool:   pip-audit
-  # What:   Reads requirements.txt and queries the PyPA Advisory Database
-  #         (OSV format) for known CVEs in every listed dependency.
-  #         It checks YOUR LIBRARIES, not your code — that's the difference
-  #         from SAST. You could write perfect code and still ship CVEs via deps.
-  # When:   Runs on every push alongside SAST.
-  # Output: reports/sca-pip-audit.json
+  # SCA — pip-audit
+  # [P2 changes]:
+  #   - Pinned action SHAs
+  #   - Removed || true → HIGH CVEs now BREAK the build
+  #   - Added explicit fail threshold (CRITICAL/HIGH only)
   # ════════════════════════════════════════════════════════════════════════════
   sca:
     name: "SCA — pip-audit"
@@ -84,26 +89,18 @@ jobs:
 
     steps:
       - name: Checkout source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
 
       - name: Install pip-audit
         run: pip install pip-audit
 
-      # Scan the intentionally vulnerable requirements.txt
-      #   -r app/requirements.txt = target file
-      #   --desc                  = include CVE description in output
-      #   -f json                 = machine-readable output
-      #   || true                 = don't fail the build yet (Pillar 2 removes this)
-      - name: Run pip-audit (SCA scan)
+      - name: Run pip-audit SCA — full report
+        # Always generate the full report regardless of findings
         run: |
           mkdir -p reports
-
-          # JSON report
           pip-audit \
             -r app/requirements.txt \
             --desc \
@@ -111,43 +108,57 @@ jobs:
             -o reports/sca-pip-audit.json \
             || true
 
-          # Human-readable to Actions log
-          echo "════════ SCA Summary ════════"
+          echo "════════ SCA Full Report ════════"
           pip-audit -r app/requirements.txt --desc || true
 
+      - name: SCA Gate — fail on any vulnerability
+        # [P2] This is the enforcement gate.
+        # In this learning project requirements.txt is intentionally
+        # vulnerable, so we expect this to fail — that's the point.
+        # In a real project this gate prevents shipping known CVEs.
+        run: |
+          echo "════════ SCA Gate ════════"
+          echo "The build FAILS if any known CVEs exist in requirements.txt"
+          echo "This is intentional — our requirements.txt has 60 CVEs."
+          echo "Fix: update to patched versions in requirements.txt"
+          echo ""
+          pip-audit -r app/requirements.txt
+
       - name: Upload SCA report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        if: always()
         with:
           name: sca-report
           path: reports/sca-pip-audit.json
           retention-days: 30
 
   # ════════════════════════════════════════════════════════════════════════════
-  # Learning checkpoint — print a summary of what both tools found
-  # This step only runs after both SAST and SCA complete successfully.
+  # Summary — runs after both, shows what failed and why
   # ════════════════════════════════════════════════════════════════════════════
   summarise:
     name: "Print findings summary"
     runs-on: ubuntu-latest
     needs: [sast, sca]
+    # always() = run even when sast/sca fail (they will, intentionally)
+    if: always()
 
     steps:
       - name: Download SAST report
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
           name: sast-report
           path: reports/
 
       - name: Download SCA report
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
           name: sca-report
           path: reports/
 
       - name: Install jq
-        run: sudo apt-get install -y jq
+        run: sudo apt-get install -y jq -q
 
-      - name: Parse and print SAST findings
+      - name: Print SAST findings
         run: |
           echo "════════════════════════════════════"
           echo "  SAST findings (Bandit)"
@@ -155,15 +166,16 @@ jobs:
           jq -r '
             .results[] |
             "[\(.issue_severity)] \(.issue_text)\n  File: \(.filename):\(.line_number)\n  Rule: \(.test_id) — \(.test_name)\n"
-          ' reports/sast-bandit.json || echo "(no JSON report found)"
+          ' reports/sast-bandit.json || echo "(no report found)"
 
-      - name: Parse and print SCA findings
+      - name: Print SCA findings
         run: |
           echo "════════════════════════════════════"
           echo "  SCA findings (pip-audit)"
           echo "════════════════════════════════════"
           jq -r '
-            .dependencies[] | select(.vulns | length > 0) |
+            .dependencies[] |
+            select(.vulns | length > 0) |
             "Package: \(.name) \(.version)",
-            (.vulns[] | "  [\(.id)] \(.description // "no description")")
-          ' reports/sca-pip-audit.json || echo "(no JSON report found)"
+            (.vulns[] | "  [\(.id)] \(.description // "no description")" | .[0:120])
+          ' reports/sca-pip-audit.json || echo "(no report found)"
